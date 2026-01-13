@@ -47,17 +47,27 @@ pipeline {
         stage('Prepare Dockerfile') {
             steps {
                 script {
-                    // Prioritize project Dockerfile
-                    if (fileExists('Dockerfile')) {
-                        echo 'Using project Dockerfile.'
+                    def sharedDockerfile = libraryResource 'springboot/dev.Dockerfile'
+                    def dockerfilePath = 'Dockerfile'
+
+                    if (fileExists(dockerfilePath)) {
+                        def existingDockerfile = readFile(dockerfilePath)
+
+                        if (existingDockerfile != sharedDockerfile) {
+                            echo 'Dockerfile differs from shared library. Replacing it.'
+                            sh "rm -f ${dockerfilePath}"
+                            writeFile file: dockerfilePath, text: sharedDockerfile
+                        } else {
+                            echo 'Dockerfile is already up-to-date.'
+                        }
                     } else {
-                        echo 'Dockerfile not found. Using shared library Dockerfile.'
-                        def dockerfileContent = libraryResource 'springboot/dev.Dockerfile'
-                        writeFile file: 'Dockerfile', text: dockerfileContent
+                        echo 'Dockerfile not found. Creating from shared library.'
+                        writeFile file: dockerfilePath, text: sharedDockerfile
                     }
                 }
             }
         }
+
 
         // 4️⃣ Build Docker Image (with no-cache to ensure fresh build)
         stage('Build Image') {
