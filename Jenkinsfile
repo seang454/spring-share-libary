@@ -23,22 +23,25 @@ pipeline {
         }
 
         // 2️⃣ Build & Test with H2 (no need for Postgres)
-        stage('Build & Test') {
+        stage('Build & Test with H2') {
             steps {
-                sh '''
-                if [ -f "pom.xml" ]; then
-                    mvn clean package -DskipTests=false -Dspring.profiles.active=test
-                elif [ -f "build.gradle" ]; then
-                    chmod +x gradlew
-                    ./gradlew clean build -Dspring.profiles.active=test
-                else
-                    echo "No build file found"
-                    exit 1
-                fi
-                '''
+                script {
+                    if (fileExists('pom.xml')) {
+                        // Maven
+                        withEnv(['SPRING_PROFILES_ACTIVE=test']) {
+                            sh 'mvn clean test'
+                        }
+                    } else if (fileExists('build.gradle')) {
+                        // Gradle
+                        withEnv(['SPRING_PROFILES_ACTIVE=test']) {
+                            sh 'chmod +x gradlew && ./gradlew clean test'
+                        }
+                    } else {
+                        error "No build file found"
+                    }
+                }
             }
         }
-
         // 3️⃣ Prepare Dockerfile
         stage('Prepare Dockerfile') {
             steps {
