@@ -159,7 +159,7 @@ pipeline {
                 docker run -d \
                   --name spring-app \
                   --network ${NETWORK} \
-                  -p 8081:8080 \
+                  -p 8083:8080 \
                   ${REPO_NAME}/${IMAGE_NAME}:${TAG}
                 '''
             }
