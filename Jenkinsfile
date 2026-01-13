@@ -7,6 +7,10 @@ pipeline {
         REPO_NAME  = 'seang454'
         IMAGE_NAME = 'jenkins-itp-spring'
         TAG        = 'latest'
+        NETWORK    = 'spring-net'
+        DB_NAME    = 'postgres'
+        DB_USER    = 'postgres'
+        DB_PASS    = 'password'
     }
 
     stages {
@@ -22,10 +26,10 @@ pipeline {
         stage('Build & Test') {
             steps {
                 sh '''
-                # Use Maven or Gradle depending on project
                 if [ -f "pom.xml" ]; then
                     mvn clean package -DskipTests=false
                 elif [ -f "build.gradle" ]; then
+                    chmod +x gradlew
                     ./gradlew clean build
                 else
                     echo "No build file found"
@@ -35,29 +39,29 @@ pipeline {
             }
         }
 
-        // 3️⃣ Prepare Dockerfile (use shared lib if missing)
+        // 3️⃣ Prepare Dockerfile
         stage('Prepare Dockerfile') {
             steps {
                 script {
                     if (!fileExists('Dockerfile')) {
-                        echo 'Dockerfile not found in project. Using shared library Dockerfile.'
+                        echo 'Dockerfile not found. Using shared library Dockerfile.'
                         def dockerfileContent = libraryResource 'springboot/dev.Dockerfile'
                         writeFile file: 'Dockerfile', text: dockerfileContent
                     } else {
-                        echo 'Dockerfile found in project. Using project Dockerfile.'
+                        echo 'Using project Dockerfile.'
                     }
                 }
             }
         }
 
-        // 4️⃣ Build Docker image
+        // 4️⃣ Build Docker Image
         stage('Build Image') {
             steps {
                 sh 'docker build -t ${REPO_NAME}/${IMAGE_NAME}:${TAG} .'
             }
         }
 
-        // 5️⃣ Ensure Docker Hub repository exists
+        // 5️⃣ Ensure Docker Hub Repo Exists
         stage('Ensure Docker Hub Repo Exists') {
             steps {
                 withCredentials([usernamePassword(
@@ -67,20 +71,20 @@ pipeline {
                 )]) {
                     sh '''
                     STATUS=$(curl -s -o /dev/null -w "%{http_code}" -u "$DH_USERNAME:$DH_PASSWORD" \
-                        https://hub.docker.com/v2/repositories/$REPO_NAME/$IMAGE_NAME/)
+                      https://hub.docker.com/v2/repositories/$REPO_NAME/$IMAGE_NAME/)
 
                     if [ "$STATUS" -eq 404 ]; then
-                        curl -s -u "$DH_USERNAME:$DH_PASSWORD" -X POST \
-                            https://hub.docker.com/v2/repositories/ \
-                            -H "Content-Type: application/json" \
-                            -d "{\"name\":\"$IMAGE_NAME\",\"is_private\":false}"
+                      curl -s -u "$DH_USERNAME:$DH_PASSWORD" -X POST \
+                        https://hub.docker.com/v2/repositories/ \
+                        -H "Content-Type: application/json" \
+                        -d "{\"name\":\"$IMAGE_NAME\",\"is_private\":false}"
                     fi
                     '''
                 }
             }
         }
 
-        // 6️⃣ Push Docker image
+        // 6️⃣ Push Docker Image
         stage('Push Image') {
             steps {
                 withCredentials([usernamePassword(
@@ -96,13 +100,45 @@ pipeline {
             }
         }
 
-        // 7️⃣ Run Spring Boot container
-        stage('Run Service') {
+        // 7️⃣ Create Docker Network
+        stage('Create Docker Network') {
             steps {
                 sh '''
-                docker stop spring-app || true
-                docker rm spring-app || true
-                docker run -dp 8080:8080 --name spring-app ${REPO_NAME}/${IMAGE_NAME}:${TAG}
+                docker network inspect ${NETWORK} >/dev/null 2>&1 || \
+                docker network create ${NETWORK}
+                '''
+            }
+        }
+
+        // 8️⃣ Run PostgreSQL Container
+        stage('Run PostgreSQL') {
+            steps {
+                sh '''
+                docker rm -f postgres || true
+
+                docker run -d \
+                  --name postgres \
+                  --network ${NETWORK} \
+                  -e POSTGRES_DB=${DB_NAME} \
+                  -e POSTGRES_USER=${DB_USER} \
+                  -e POSTGRES_PASSWORD=${DB_PASS} \
+                  -p 5432:5432 \
+                  postgres:16
+                '''
+            }
+        }
+
+        // 9️⃣ Run Spring Boot Container
+        stage('Run Spring Boot') {
+            steps {
+                sh '''
+                docker rm -f spring-app || true
+
+                docker run -d \
+                  --name spring-app \
+                  --network ${NETWORK} \
+                  -p 8080:8080 \
+                  ${REPO_NAME}/${IMAGE_NAME}:${TAG}
                 '''
             }
         }
