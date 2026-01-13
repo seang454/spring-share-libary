@@ -22,17 +22,15 @@ pipeline {
             }
         }
 
-        // 2️⃣ Build and Test Spring Boot (H2 for CI tests)
+        // 2️⃣ Build & Test with H2 (no need for Postgres)
         stage('Build & Test') {
             steps {
                 sh '''
                 if [ -f "pom.xml" ]; then
-                    mvn clean package -DskipTests=true
-                    mvn test -Dspring.profiles.active=test
+                    mvn clean package -DskipTests=false -Dspring.profiles.active=test
                 elif [ -f "build.gradle" ]; then
                     chmod +x gradlew
-                    ./gradlew clean build -x test
-                    ./gradlew test -Dspring.profiles.active=test
+                    ./gradlew clean build -Dspring.profiles.active=test
                 else
                     echo "No build file found"
                     exit 1
@@ -87,7 +85,7 @@ pipeline {
         }
 
         // 6️⃣ Push Docker Image
-        stage('Push Docker Image') {
+        stage('Push Image') {
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: 'DOCKERHUB-CREDENTIAL',
@@ -106,7 +104,8 @@ pipeline {
         stage('Create Docker Network') {
             steps {
                 sh '''
-                docker network inspect ${NETWORK} >/dev/null 2>&1 || docker network create ${NETWORK}
+                docker network inspect ${NETWORK} >/dev/null 2>&1 || \
+                docker network create ${NETWORK}
                 '''
             }
         }
@@ -126,7 +125,7 @@ pipeline {
                   -p 5432:5432 \
                   postgres:16
 
-                # Wait until Postgres is ready
+                # Wait for Postgres to be ready
                 until docker exec postgres pg_isready -U ${DB_USER}; do
                   echo "Waiting for Postgres..."
                   sleep 2
