@@ -42,28 +42,29 @@ pipeline {
                 }
             }
         }
+
         // 3️⃣ Prepare Dockerfile
         stage('Prepare Dockerfile') {
             steps {
                 script {
-                    if (!fileExists('Dockerfile')) {
+                    // Prioritize project Dockerfile
+                    if (fileExists('Dockerfile')) {
+                        echo 'Using project Dockerfile.'
+                    } else {
                         echo 'Dockerfile not found. Using shared library Dockerfile.'
                         def dockerfileContent = libraryResource 'springboot/dev.Dockerfile'
                         writeFile file: 'Dockerfile', text: dockerfileContent
-                    } else {
-                        echo 'Using project Dockerfile.'
                     }
                 }
             }
         }
 
-        // 4️⃣ Build Docker Image
+        // 4️⃣ Build Docker Image (with no-cache to ensure fresh build)
         stage('Build Image') {
             steps {
-                sh 'docker build -t ${REPO_NAME}/${IMAGE_NAME}:${TAG} .'
+                sh 'docker build --no-cache -t ${REPO_NAME}/${IMAGE_NAME}:${TAG} .'
             }
         }
-
 
         // 5️⃣ Ensure Docker Hub Repo Exists
         stage('Ensure Docker Hub Repo Exists') {
@@ -99,6 +100,7 @@ pipeline {
                     sh '''
                     echo "$DH_PASSWORD" | docker login -u "$DH_USERNAME" --password-stdin
                     docker push ${REPO_NAME}/${IMAGE_NAME}:${TAG}
+                    docker logout
                     '''
                 }
             }
