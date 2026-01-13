@@ -1,0 +1,110 @@
+@Library('devop_itp_share_library@master') _
+
+pipeline {
+    agent any
+
+    environment {
+        REPO_NAME  = 'seang454'
+        IMAGE_NAME = 'jenkins-itp-spring'
+        TAG        = 'latest'
+    }
+
+    stages {
+
+        // 1️⃣ Clone Spring Boot Code
+        stage('Clone Code') {
+            steps {
+                git 'https://github.com/seang454/springboot-devop-template.git'
+            }
+        }
+
+        // 2️⃣ Build and Test Spring Boot
+        stage('Build & Test') {
+            steps {
+                sh '''
+                # Use Maven or Gradle depending on project
+                if [ -f "pom.xml" ]; then
+                    mvn clean package -DskipTests=false
+                elif [ -f "build.gradle" ]; then
+                    ./gradlew clean build
+                else
+                    echo "No build file found"
+                    exit 1
+                fi
+                '''
+            }
+        }
+
+        // 3️⃣ Prepare Dockerfile (use shared lib if missing)
+        stage('Prepare Dockerfile') {
+            steps {
+                script {
+                    if (!fileExists('Dockerfile')) {
+                        echo 'Dockerfile not found in project. Using shared library Dockerfile.'
+                        def dockerfileContent = libraryResource 'springboot/dev.Dockerfile'
+                        writeFile file: 'Dockerfile', text: dockerfileContent
+                    } else {
+                        echo 'Dockerfile found in project. Using project Dockerfile.'
+                    }
+                }
+            }
+        }
+
+        // 4️⃣ Build Docker image
+        stage('Build Image') {
+            steps {
+                sh 'docker build -t ${REPO_NAME}/${IMAGE_NAME}:${TAG} .'
+            }
+        }
+
+        // 5️⃣ Ensure Docker Hub repository exists
+        stage('Ensure Docker Hub Repo Exists') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'DOCKERHUB-CREDENTIAL',
+                    usernameVariable: 'DH_USERNAME',
+                    passwordVariable: 'DH_PASSWORD'
+                )]) {
+                    sh '''
+                    STATUS=$(curl -s -o /dev/null -w "%{http_code}" -u "$DH_USERNAME:$DH_PASSWORD" \
+                        https://hub.docker.com/v2/repositories/$REPO_NAME/$IMAGE_NAME/)
+
+                    if [ "$STATUS" -eq 404 ]; then
+                        curl -s -u "$DH_USERNAME:$DH_PASSWORD" -X POST \
+                            https://hub.docker.com/v2/repositories/ \
+                            -H "Content-Type: application/json" \
+                            -d "{\"name\":\"$IMAGE_NAME\",\"is_private\":false}"
+                    fi
+                    '''
+                }
+            }
+        }
+
+        // 6️⃣ Push Docker image
+        stage('Push Image') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'DOCKERHUB-CREDENTIAL',
+                    usernameVariable: 'DH_USERNAME',
+                    passwordVariable: 'DH_PASSWORD'
+                )]) {
+                    sh '''
+                    echo "$DH_PASSWORD" | docker login -u "$DH_USERNAME" --password-stdin
+                    docker push ${REPO_NAME}/${IMAGE_NAME}:${TAG}
+                    '''
+                }
+            }
+        }
+
+        // 7️⃣ Run Spring Boot container
+        stage('Run Service') {
+            steps {
+                sh '''
+                docker stop spring-app || true
+                docker rm spring-app || true
+                docker run -dp 8080:8080 --name spring-app ${REPO_NAME}/${IMAGE_NAME}:${TAG}
+                '''
+            }
+        }
+    }
+}
