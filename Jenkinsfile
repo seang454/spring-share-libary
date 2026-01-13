@@ -60,7 +60,7 @@ pipeline {
         // 4️⃣ Build Docker Image
         stage('Build Image') {
             steps {
-                sh 'docker build --no-cache -t ${REPO_NAME}/${IMAGE_NAME}:${TAG} .'
+                sh 'docker build -t ${REPO_NAME}/${IMAGE_NAME}:${TAG} .'
             }
         }
 
