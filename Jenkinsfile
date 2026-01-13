@@ -60,9 +60,10 @@ pipeline {
         // 4️⃣ Build Docker Image
         stage('Build Image') {
             steps {
-                sh 'docker build -t ${REPO_NAME}/${IMAGE_NAME}:${TAG} .'
+                sh 'docker build --no-cache -t ${REPO_NAME}/${IMAGE_NAME}:${TAG} .'
             }
         }
+
 
         // 5️⃣ Ensure Docker Hub Repo Exists
         stage('Ensure Docker Hub Repo Exists') {
